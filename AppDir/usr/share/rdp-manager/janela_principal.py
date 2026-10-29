@@ -280,6 +280,25 @@ class RDPManager(Gtk.ApplicationWindow):
         esquerda.append(limpar_button)
 
 
+        # Botão excluir (visível apenas ao editar)
+        self.excluir_button = Gtk.Button(
+            label="Excluir conexão"
+        )
+
+        self.excluir_button.add_css_class(
+            "destructive-action"
+        )
+
+        self.excluir_button.connect(
+            "clicked",
+            self.excluir_selecionada
+        )
+
+        self.excluir_button.set_visible(False)
+
+        esquerda.append(self.excluir_button)
+
+
         # ====================================================
         # LADO DIREITO
         # ====================================================
@@ -403,22 +422,6 @@ class RDPManager(Gtk.ApplicationWindow):
         )
 
         botoes.append(editar_button)
-
-
-        excluir_button = Gtk.Button(
-            label="Excluir"
-        )
-
-        excluir_button.add_css_class(
-            "destructive-action"
-        )
-
-        excluir_button.connect(
-            "clicked",
-            self.excluir_selecionada
-        )
-
-        botoes.append(excluir_button)
 
 
     # ========================================================
@@ -940,6 +943,8 @@ class RDPManager(Gtk.ApplicationWindow):
             "Salvar conexão"
         )
 
+        self.excluir_button.set_visible(False)
+
     def abrir_formulario_nova(self, *args):
         self.limpar_formulario()
         self.janela_form.set_title("Nova conexão")
@@ -1262,6 +1267,8 @@ class RDPManager(Gtk.ApplicationWindow):
             "Salvar alterações"
         )
 
+        self.excluir_button.set_visible(True)
+
         self.janela_form.set_title("Editar conexão")
         self.janela_form.present()
 
@@ -1272,14 +1279,12 @@ class RDPManager(Gtk.ApplicationWindow):
 
     def excluir_selecionada(self, button):
 
-        conexao = self.obter_selecionada()
+        conexao = next(
+            (c for c in self.conexoes if c["name"] == self.editando_nome),
+            None
+        )
 
         if conexao is None:
-
-            self.mostrar_erro(
-                "Selecione uma conexão primeiro."
-            )
-
             return
 
 
@@ -1303,7 +1308,7 @@ class RDPManager(Gtk.ApplicationWindow):
 
 
         dialog.choose(
-            self,
+            self.janela_form,
             None,
             self.confirmar_exclusao,
             conexao
@@ -1338,6 +1343,8 @@ class RDPManager(Gtk.ApplicationWindow):
         salvar_conexoes(self.conexoes, self.senha_mestra)
 
         self.atualizar_lista()
+
+        self.janela_form.close()
 
 
     # ========================================================
