@@ -1,0 +1,19 @@
+# Gerado pelo build.sh
+
+# Código do FreeRDP, linuxdeploy e plugin GTK baixados + build
+build-tmp/
+
+# AppImage final
+*.AppImage
+
+# xfreerdp compilado e libs copiadas/empacotadas
+AppDir/usr/bin/
+AppDir/usr/lib/
+
+# Arquivos gerados pelo linuxdeploy dentro do AppDir
+AppDir/.DirIcon
+AppDir/AppRun.wrapped
+AppDir/apprun-hooks/
+AppDir/usr/share/applications/
+AppDir/usr/share/glib-2.0/
+AppDir/usr/share/pixmaps/

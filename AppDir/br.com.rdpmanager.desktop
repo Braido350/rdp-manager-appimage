@@ -1,8 +1,1 @@
-[Desktop Entry]
-Type=Application
-Name=RDP Manager
-Comment=Gerenciador de conexões RDP
-Exec=rdp-manager
-Icon=br.com.rdpmanager
-Terminal=false
-Categories=Network;RemoteAccess;
+usr/share/applications/br.com.rdpmanager.desktop

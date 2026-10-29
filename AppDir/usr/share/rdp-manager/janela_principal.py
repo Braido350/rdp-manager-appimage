@@ -9,6 +9,7 @@ backup criptografado.
 import os
 import json
 import subprocess
+import tempfile
 import threading
 from datetime import datetime
 from gi.repository import Gtk, GLib, Gdk, Gio
@@ -1092,8 +1093,6 @@ class RDPManager(Gtk.ApplicationWindow):
 
         conexao["last_used"] = agora
 
-        salvar_conexoes(self.conexoes, self.senha_mestra)
-
         titulo_janela = self._titulo_janela_rdp(conexao["name"])
 
         # Prefere o FreeRDP instalado no sistema (bem mais rápido);
@@ -1110,6 +1109,8 @@ class RDPManager(Gtk.ApplicationWindow):
             "/dynamic-resolution",
             "/clipboard",
             "/bpp:16",
+            "/network:auto",
+            "/log-level:ERROR",  # menos saída = menos overhead
             "/kbd:layout:0x00010416",  # ABNT2 (PT-BR) — evita o
                                         # autodetect errado de layout
                                         # que troca Ctrl/A por outras teclas
@@ -1124,13 +1125,25 @@ class RDPManager(Gtk.ApplicationWindow):
 
         try:
 
+            # Saída vai pra um arquivo temporário: com PIPE, se
+            # ninguém lê, o buffer enche e o xfreerdp trava/fica lento.
+            log_saida = tempfile.TemporaryFile(mode="w+")
             processo = subprocess.Popen(
                 comando,
-                stdout=subprocess.PIPE,
+                stdout=log_saida,
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env_freerdp
             )
+            processo.log_saida = log_saida
+
+            # Salvar (PBKDF2, lento) fora da thread da interface e
+            # depois de já ter aberto o FreeRDP.
+            threading.Thread(
+                target=salvar_conexoes,
+                args=(list(self.conexoes), self.senha_mestra),
+                daemon=True
+            ).start()
 
             # Marca como conectada imediatamente (o processo já está
             # de pé) e atualiza a lista pra mostrar o ícone verde e
@@ -1148,7 +1161,7 @@ class RDPManager(Gtk.ApplicationWindow):
             # Libera novos cliques automaticamente após alguns
             # segundos, tempo suficiente pro xfreerdp abrir a janela
             GLib.timeout_add_seconds(
-                5,
+                2,
                 self.liberar_interface
             )
         except FileNotFoundError:
@@ -1190,7 +1203,9 @@ class RDPManager(Gtk.ApplicationWindow):
         # O processo terminou; agora podemos ler a saída sem
         # bloquear a interface.
         try:
-            saida, _ = processo.communicate(timeout=1)
+            processo.log_saida.seek(0)
+            saida = processo.log_saida.read()[-4000:]
+            processo.log_saida.close()
         except Exception:
             saida = ""
 
