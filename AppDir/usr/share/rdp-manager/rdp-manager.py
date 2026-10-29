@@ -75,4 +75,8 @@ class Aplicacao(Gtk.Application):
 
 app = Aplicacao()
 
-app.run()
+try:
+    app.run()
+except KeyboardInterrupt:
+    # Ctrl+C no terminal: sai sem mostrar traceback
+    pass

@@ -17,3 +17,7 @@ AppDir/apprun-hooks/
 AppDir/usr/share/applications/
 AppDir/usr/share/glib-2.0/
 AppDir/usr/share/pixmaps/
+
+# Cache do Python
+__pycache__/
+*.pyc

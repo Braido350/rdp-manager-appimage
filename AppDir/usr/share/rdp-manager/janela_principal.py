@@ -48,28 +48,23 @@ class RDPManager(Gtk.ApplicationWindow):
         self.conexoes = carregar_conexoes(self.senha_mestra)
         self.texto_filtro = ""
         self.conectando = False
+        self.editando_nome = None  # nome da conexão sendo editada
         self.processos_ativos = {}  # nome_da_conexao -> subprocess.Popen
         self.pings = {}  # nome_da_conexao -> latência em ms (ou None)
         self.labels_ping = {}  # nome_da_conexao -> Gtk.Label (badge "Conectado · Xms")
 
         aplicar_css_moderno()
 
-        self.set_default_size(920, 600)
+        self.set_default_size(460, 600)
 
         # Fechar a janela (X) só ESCONDE: o app continua em segundo
         # plano com o cofre aberto, então não pede a senha de novo.
         # Para voltar, é só abrir o RDP Manager outra vez (atalho do
-        # menu/AppImage). Para encerrar de verdade: botão "Sair" ou Ctrl+Q.
+        # menu/AppImage). Não há opção de encerrar pela interface.
         self._app = app
         app.hold()
-        self._segurando = True
         app.janela_principal = self
         self.connect("close-request", self._ao_fechar)
-
-        sair = Gio.SimpleAction.new("sair", None)
-        sair.connect("activate", lambda a, p: self.sair())
-        app.add_action(sair)
-        app.set_accels_for_action("app.sair", ["<Primary>q"])
 
         self.criar_interface()
         self.atualizar_lista()
@@ -93,12 +88,6 @@ class RDPManager(Gtk.ApplicationWindow):
     def _ao_fechar(self, janela):
         self.set_visible(False)
         return True   # impede a destruição da janela
-
-    def sair(self):
-        if self._segurando:
-            self._segurando = False
-            self._app.release()
-        self._app.quit()
 
 
     # ========================================================
@@ -140,14 +129,12 @@ class RDPManager(Gtk.ApplicationWindow):
         )
         header.pack_start(exportar_button)
 
-        sair_button = Gtk.Button()
-        sair_button.set_icon_name("application-exit-symbolic")
-        sair_button.set_tooltip_text(
-            "Sair do RDP Manager (Ctrl+Q) — o X apenas minimiza para "
-            "o segundo plano"
-        )
-        sair_button.connect("clicked", lambda b: self.sair())
-        header.pack_end(sair_button)
+        nova_button = Gtk.Button()
+        nova_button.set_icon_name("list-add-symbolic")
+        nova_button.set_tooltip_text("Nova conexão")
+        nova_button.add_css_class("suggested-action")
+        nova_button.connect("clicked", self.abrir_formulario_nova)
+        header.pack_end(nova_button)
 
         freerdp_button = Gtk.Button()
         freerdp_button.set_icon_name("software-update-available-symbolic")
@@ -163,17 +150,24 @@ class RDPManager(Gtk.ApplicationWindow):
         self.set_titlebar(header)
 
 
-        # Container principal
-        principal = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=0
+        # Formulário de conexão: janela separada, aberta pelo
+        # botão "Nova conexão" ou pelo "Editar".
+        self.janela_form = Gtk.Window(
+            transient_for=self,
+            modal=True,
+            title="Nova conexão",
+            hide_on_close=True
         )
-
-        self.set_child(principal)
+        self.janela_form.set_default_size(360, -1)
+        self.janela_form.set_resizable(False)
+        self.janela_form.connect(
+            "close-request",
+            lambda w: (self.limpar_formulario(), False)[1]
+        )
 
 
         # ====================================================
-        # LADO ESQUERDO
+        # FORMULÁRIO
         # ====================================================
 
         esquerda = Gtk.Box(
@@ -186,17 +180,7 @@ class RDPManager(Gtk.ApplicationWindow):
         esquerda.set_margin_start(25)
         esquerda.set_margin_end(25)
 
-        esquerda.set_size_request(360, -1)
-
-        principal.append(esquerda)
-
-
-        titulo = Gtk.Label()
-        titulo.set_markup("<big><b>Nova conexão</b></big>")
-        titulo.add_css_class("rdp-titulo")
-        titulo.set_halign(Gtk.Align.START)
-
-        esquerda.append(titulo)
+        self.janela_form.set_child(esquerda)
 
 
         descricao = Gtk.Label(
@@ -283,28 +267,17 @@ class RDPManager(Gtk.ApplicationWindow):
         esquerda.append(self.salvar_button)
 
 
-        # Botão limpar
+        # Botão cancelar
         limpar_button = Gtk.Button(
-            label="Limpar"
+            label="Cancelar"
         )
 
         limpar_button.connect(
             "clicked",
-            self.limpar_formulario
+            lambda b: self.janela_form.close()
         )
 
         esquerda.append(limpar_button)
-
-
-        # ====================================================
-        # SEPARADOR CENTRAL
-        # ====================================================
-
-        separador = Gtk.Separator(
-            orientation=Gtk.Orientation.VERTICAL
-        )
-
-        principal.append(separador)
 
 
         # ====================================================
@@ -321,7 +294,7 @@ class RDPManager(Gtk.ApplicationWindow):
         direita.set_margin_start(25)
         direita.set_margin_end(25)
 
-        principal.append(direita)
+        self.set_child(direita)
 
 
         titulo_lista = Gtk.Label()
@@ -904,6 +877,13 @@ class RDPManager(Gtk.ApplicationWindow):
 
         conexao_para_abrir = None
 
+        # Editando e renomeou: remove a versão com o nome antigo
+        if self.editando_nome and self.editando_nome != nome:
+            self.conexoes = [
+                c for c in self.conexoes
+                if c["name"] != self.editando_nome
+            ]
+
         # Procurar conexão existente
         for conexao in self.conexoes:
 
@@ -937,8 +917,8 @@ class RDPManager(Gtk.ApplicationWindow):
         # Atualizar lista
         self.atualizar_lista()
 
-        # Limpar formulário
-        self.limpar_formulario()
+        # Fechar formulário (também limpa os campos)
+        self.janela_form.close()
 
         # Conectar automaticamente
         self.conectar(conexao_para_abrir)
@@ -954,9 +934,17 @@ class RDPManager(Gtk.ApplicationWindow):
         self.usuario_entry.set_text("")
         self.senha_entry.set_text("")
 
+        self.editando_nome = None
+
         self.salvar_button.set_label(
             "Salvar conexão"
         )
+
+    def abrir_formulario_nova(self, *args):
+        self.limpar_formulario()
+        self.janela_form.set_title("Nova conexão")
+        self.janela_form.present()
+        self.nome_entry.grab_focus()
 
 
     # ========================================================
@@ -1108,8 +1096,8 @@ class RDPManager(Gtk.ApplicationWindow):
             "/cert:ignore",
             "/dynamic-resolution",
             "/clipboard",
-            "/bpp:16",
-            "/network:auto",
+            "/bpp:32",
+            "/gfx",  # codec gráfico moderno (Win10/11): com /bpp:16 a tela pode congelar
             "/log-level:ERROR",  # menos saída = menos overhead
             "/kbd:layout:0x00010416",  # ABNT2 (PT-BR) — evita o
                                         # autodetect errado de layout
@@ -1268,19 +1256,14 @@ class RDPManager(Gtk.ApplicationWindow):
         )
 
 
-        # Remover temporariamente a conexão
-        self.conexoes = [
-            c for c in self.conexoes
-            if c["name"] != conexao["name"]
-        ]
-
-        salvar_conexoes(self.conexoes, self.senha_mestra)
-
-        self.atualizar_lista()
+        self.editando_nome = conexao["name"]
 
         self.salvar_button.set_label(
             "Salvar alterações"
         )
+
+        self.janela_form.set_title("Editar conexão")
+        self.janela_form.present()
 
 
     # ========================================================
